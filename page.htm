@@ -1,0 +1,357 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark's Data Lab</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/chartist/0.11.0/chartist.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+</head>
+<body>
+    <style>
+        body {
+            padding-top: 50px;
+            padding-bottom: 20px;
+        }
+
+        /* Set padding to keep content from hitting the edges */
+        .body-content {
+            padding-left: 15px;
+            padding-right: 15px;
+        }
+
+        .ct-label {
+            font-size: 14px;
+        }
+    </style>
+		
+    <div class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/">Mark&#39;s Data Lab</a>
+            </div>
+            <div class="navbar-collapse collapse">
+                <ul class="nav navbar-nav"></ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="container body-content">
+		<div class="row" style="margin-top:10px;">
+            <div class="col">
+                Adblocker note: You may need to whitelist this site in any adblockers
+            </div>
+        </div>
+		<div class="row" style="margin-top:10px;">
+            <div class="col">
+                Page name: 
+				<input type="text" class="form-control" placeholder="Page name here..." id="pageName" onclick="this.setSelectionRange(0, this.value.length)">
+            </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+            <div class="col">
+                <button id="loginButton" type="button" class="btn btn-primary" onclick="login()" disabled>Open connection to Facebook</button>
+                <button id="logoutButton" type="button" class="btn btn-primary" onclick="logout()" disabled>Close connection to Facebook</button>
+                <button id="downloadButton" type="button" class="btn btn-primary" onclick="startPostDownload()" disabled>Start analysis</button>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col">
+                <h3 id="status">Status: Idle.</h3>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="d3-chart"></div>
+            </div>
+        </div>
+
+        <form id="postAnalysisForm" class="" role="form">
+            <div class="row">
+                <div class="form-group">
+                    <label for="" class="col-form-label">Share your chart trend with others so they can add it to their chart!</label>
+                    <div class="input-group">
+                        <span class="input-group-btn">
+                            <button class="btn btn-secondary" type="button" style="width:60px;" onclick="copyDataBlobToClipboard()">Copy</button>
+                        </span>
+                        <input type="text" class="form-control" placeholder="Run analysis first..." id="myDataBlob" onclick="this.setSelectionRange(0, this.value.length)">
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="form-group">
+                    <label for="" class="col-form-label">Add your friend's trend to your chart!</label>
+                    <div class="input-group">
+                        <span class="input-group-btn">
+                            <button class="btn btn-secondary" type="button" style="width:60px;" onclick="addFriend()">Add</button>
+                        </span>
+                        <input type="text" class="form-control" placeholder="Copy your friend's data blob here..." id="friendDataBlob" onclick="this.setSelectionRange(0, this.value.length)">
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <div class="row">
+            <div class="col">
+                Privacy note: All data retrieved from the Facebook API remains within your browser; no data is shared with servers or services. Sharing your trend with your friends is optional!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var me;
+        var posts = [];
+        var myDataBlob;
+        var friendDataBlobs = [];
+
+        $(document).ready(function () {
+            FB.init(
+                {
+                    appId: '1578711275529696',
+                    xfbml: true,
+                    version: 'v2.10'
+                }
+            );
+
+			//If we're already logged in, get the 'me' object
+			FB.getLoginStatus(function (response) {
+				if (response && response.status === 'connected') {
+					console.log('Welcome!  Fetching your information.... ');
+					FB.api('/' + $("#pageName").val(), function (response) {
+						me = response;
+						console.log('Good to see you, ' + response.name + '.');
+					});
+				}
+			});
+		
+            updateLogButtonState();
+            renderChart();
+        });
+
+        function login() {
+            FB.login(function (response) {
+                if (response.authResponse) {
+                    console.log('Welcome!  Fetching your information.... ');
+                    FB.api('/' + $("#pageName").val(), function (response) {
+                        me = response;
+                        console.log('Good to see you, ' + response.name + '.');
+                    });
+                    updateLogButtonState();
+                } else {
+                    console.log('User cancelled login or did not fully authorize.');
+                    updateLogButtonState();
+                }
+            }, { scope: 'user_posts' });
+        }
+
+        function logout() {
+            FB.getLoginStatus(function (response) {
+                if (response && response.status === 'connected') {
+                    FB.logout(function (response) {
+                        document.location.reload();
+                    });
+                }
+            });
+        }
+
+        function updateLogButtonState() {
+            FB.getLoginStatus(function (response) {
+                if (response && response.status === 'connected') {
+                    $("#loginButton").prop("disabled", true);
+                    $("#logoutButton").prop("disabled", false);
+                    $("#downloadButton").prop("disabled", false);
+                }
+                else {
+                    $("#loginButton").prop("disabled", false);
+                    $("#logoutButton").prop("disabled", true);
+                    $("#downloadButton").prop("disabled", true);
+                }
+            });
+        }
+
+        function startPostDownload() {
+            posts = [];
+            FB.api('/' + $("#pageName").val() + "/posts", "GET", null, postsCallback);
+        }
+
+        function postsCallback(data) {
+            //console.log(data);
+            if (data.data != null) {
+                posts.push.apply(posts, data.data);
+                updateStatus(posts.length + " posts analysed...");
+                processPosts();
+            }
+
+            //The lack of a null-coalescing operator is appalling.
+            if (data != null)
+                if (data.paging != null)
+                    if (data.paging.next != null)
+                        FB.api(data.paging.next, "GET", null, postsCallback);
+                    else
+                        finishedPostDownload();
+                else
+                    finishedPostDownload();
+            else
+                finishedPostDownload();
+        }
+
+        function finishedPostDownload() {
+            console.log("Finished downloading posts");
+            updateStatus("Analysis complete. " + posts.length + " posts analysed.");
+            $("#myDataBlob").val(JSON.stringify(myDataBlob));
+        }
+
+        function updateStatus(status) {
+            $("#status").text("Status: " + status);
+        }
+
+        function renderChart() {
+            var flatJson = [];
+            var seriesNames = [];
+
+            if (myDataBlob != null) {
+                for (i = 0; i < myDataBlob.trend.length; i++) {
+                    flatJson.push({ "Name": myDataBlob.name, "Year": myDataBlob.trend[i].year, "Count": myDataBlob.trend[i].count });
+                }
+                seriesNames.push(myDataBlob.name);
+            }
+
+            for (n = 0; n < friendDataBlobs.length; n++) {
+                for (i = 0; i < friendDataBlobs[n].trend.length; i++) {
+                    flatJson.push({ "Name": friendDataBlobs[n].name, "Year": friendDataBlobs[n].trend[i].year, "Count": friendDataBlobs[n].trend[i].count });
+                }
+                seriesNames.push(friendDataBlobs[n].name);
+            }
+
+            d3.select(".d3-chart").selectAll("*").remove();
+            var svg = dimple.newSvg(".d3-chart", "100%", 500);
+            //var svg = d3.select(".d3-chart");
+            var chart = new dimple.chart(svg, flatJson);
+            chart.addCategoryAxis("x", "Year");
+            chart.addMeasureAxis("y", "Count");
+            chart.addSeries("Name", dimple.plot.line).addOrderRule(seriesNames);
+            chart.addLegend(0, 10, "90%", 20, "right");
+            chart.draw();
+        }
+
+        function processPosts() {
+            var counts = {};
+            for (i = 0; i < posts.length; i++) {
+                var year = moment(posts[i].created_time).year();
+                if (counts[year] == null)
+                    counts[year] = 1;
+                else
+                    counts[year]++;
+            }
+
+            var dataBlob = { "name": me.name, "generated": moment(), "trend": [] };
+            for (var year in counts) {
+                dataBlob.trend.push({ "year": year, "count": counts[year] });
+            }
+            myDataBlob = dataBlob;
+            //Now check friendDataBlobs for my own blob and remove.
+            for (i = 0; i < friendDataBlobs.length; i++) {
+                if (friendDataBlobs[i].name == myDataBlob.name) {
+                    friendDataBlobs.splice(i, 1);
+                }
+            }
+            //console.log(dataBlob);
+            renderChart();
+        }
+
+        function addFriend() {
+            var friendBlobString = $("#friendDataBlob").val();
+            if (friendBlobString) {
+                var friendBlob = JSON.parse(friendBlobString);
+                for (i = 0; i < friendDataBlobs.length; i++) {
+                    if (friendDataBlobs[i].name == friendBlob.name) {
+                        friendDataBlobs.splice(i, 1);
+                    }
+                }
+                friendDataBlobs.push(friendBlob);
+            }
+            renderChart();
+        }
+
+        function copyDataBlobToClipboard() {
+            copyToClipboard(JSON.stringify(myDataBlob));
+        }
+
+        const copyToClipboard = (function initClipboardText() {
+            const id = 'copy-to-clipboard-helper';
+            const element = document.getElementById(id);
+            const textarea = element || document.createElement('textarea');
+
+            if (!element) {
+                textarea.id = id;
+                // Place in top-left corner of screen regardless of scroll position.
+                textarea.style.position = 'fixed';
+                textarea.style.top = 0;
+                textarea.style.left = 0;
+
+                // Ensure it has a small width and height. Setting to 1px / 1em
+                // doesn't work as this gives a negative w/h on some browsers.
+                textarea.style.width = '1px';
+                textarea.style.height = '1px';
+
+                // We don't need padding, reducing the size if it does flash render.
+                textarea.style.padding = 0;
+
+                // Clean up any borders.
+                textarea.style.border = 'none';
+                textarea.style.outline = 'none';
+                textarea.style.boxShadow = 'none';
+
+                // Avoid flash of white box if rendered for any reason.
+                textarea.style.background = 'transparent';
+
+                // Set to readonly to prevent mobile devices opening a keyboard when
+                // text is .select()'ed.
+                textarea.setAttribute('readonly', true);
+
+                document.body.appendChild(textarea);
+            }
+
+            return function setClipboardText(text) {
+                textarea.value = text;
+
+                // iOS Safari blocks programmtic execCommand copying normally, without this hack.
+                // https://stackoverflow.com/questions/34045777/copy-to-clipboard-using-javascript-in-ios
+                if (navigator.userAgent.match(/ipad|ipod|iphone/i)) {
+                    const editable = textarea.contentEditable;
+                    textarea.contentEditable = true;
+                    const range = document.createRange();
+                    range.selectNodeContents(textarea);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    textarea.setSelectionRange(0, 999999);
+                    textarea.contentEditable = editable;
+                } else {
+                    textarea.select();
+                }
+
+                try {
+                    return document.execCommand('copy');
+                } catch (err) {
+                    return false;
+                }
+            };
+        }());
+    </script>
+
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.min.js"></script>
+    <script src="https://connect.facebook.net/en_US/sdk.js"></script>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dimple/2.3.0/dimple.latest.min.js"></script>
+</body>
+</html>
